@@ -22,7 +22,7 @@
     }
     h1 {
       margin: 0 0 8px 0;
-      font-size: 28px;
+      font-size: 26px;
     }
     .estado {
       font-size: 18px;
@@ -164,24 +164,26 @@
 
 <script>
   // =========================================================================
-  // DATOS FIJOS PREDETERMINADOS
+  // DATOS FIJOS PREDETERMINADOS (Pegá acá tus enlaces para que queden fijos)
   // =========================================================================
   const TELEFONO_FIJO = "5491156378127";
   const PLANILLA_FIJA = "https://docs.google.com/spreadsheets/d/1oXpRzPNlI0kY9bhV5HNKCFqk-tmBIp4YRWlCyt-gwD4/edit?usp=drive_link";
-  const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzzMvppseiPWtKM1RJ6iRADN6R4GUEySrufwsDZrksvL0qfw1frJXxCWGgWjqSdvMVK/exec";
+  const APPS_SCRIPT_URL = "https://script.google.com/macros/library/d/1VbEpWWnVXX042BJYiD-JGH8YDb1qc2O2Kt2VxXdlm3LvjwcXKPg5-N2Q/3";
   // =========================================================================
 
-  const DIAS = ["domingo", "lunes", "martes", "miercoles", "jueves", "viernes", "sabado"];
-  const diaActual = DIAS[new Date().getDay()];
-  const fechaHoy = new Date().toISOString().split("T")[0];
+  const DIAS = ["Domingo", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado"];
+  const ahora = new Date();
+  const diaHoy = ahora.getDate();
+  const mesHoy = ahora.getMonth() + 1;
+  const anioHoy = ahora.getFullYear();
+  const nombreDiaHoy = DIAS[ahora.getDay()];
+
+  // Fecha local en formato DD/MM/YYYY (no se desfasa después de las 21:00 hs)
+  const fechaHoyStr = `${String(diaHoy).padStart(2, "0")}/${String(mesHoy).padStart(2, "0")}/${anioHoy}`;
   let archivoImagenHoy = null;
 
-  function normalizar(str) {
-    return (str || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
-  }
-
   window.onload = () => {
-    document.getElementById("titulo-dia").innerText = "☀️ Mensaje del " + diaActual.charAt(0).toUpperCase() + diaActual.slice(1);
+    document.getElementById("titulo-dia").innerText = `☀️ ${nombreDiaHoy} (${fechaHoyStr})`;
     document.getElementById("telefono").value = localStorage.getItem("telefono_hermano") || TELEFONO_FIJO;
     document.getElementById("sheet-url").value = localStorage.getItem("sheet_url") || PLANILLA_FIJA;
 
@@ -189,9 +191,26 @@
     cargarDesdePlanilla();
   };
 
+  // Compara si una celda contiene la fecha de hoy (acepta DD/MM/YYYY, DD/MM/YY, DD/MM o "Domingo 27/09")
+  function coincideConFechaHoy(textoCelda) {
+    if (!textoCelda) return false;
+    const str = String(textoCelda).trim();
+
+    // Formato común en español: DD/MM/YYYY, DD-MM-YYYY o DD/MM
+    const matchDMY = str.match(/(\d{1,2})[\/\-](\d{1,2})(?:[\/\-](\d{2,4}))?/);
+    if (matchDMY) {
+      const d = parseInt(matchDMY[1], 10);
+      const m = parseInt(matchDMY[2], 10);
+      let a = matchDMY[3] ? parseInt(matchDMY[3], 10) : anioHoy;
+      if (a < 100) a += 2000;
+      return d === diaHoy && m === mesHoy && a === anioHoy;
+    }
+    return false;
+  }
+
   function obtenerClaveContador(numero) {
     const numLimpio = (numero || "").replace(/\D/g, "");
-    return `envios_${fechaHoy}_${numLimpio}`;
+    return `envios_${fechaHoyStr}_${numLimpio}`;
   }
 
   function actualizarEstadoVisual() {
@@ -277,13 +296,17 @@
       let mensajeEncontrado = false;
 
       for (const fila of filas) {
-        const diaColumnaA = normalizar(fila[0]);
+        const colA = (fila[0] || "").trim();
         const textoColumnaB = (fila[1] || "").trim();
         const imagenColumnaC = (fila[2] || "").trim();
-        const estadoColumnaD = (fila[3] || "").trim();
+        const colD = (fila[3] || "").trim();
 
-        // Levanta la primera fila del día de hoy que todavía tenga la Columna D vacía
-        if (fila.length >= 2 && diaColumnaA !== "" && diaColumnaA.includes(diaActual) && estadoColumnaD === "") {
+        // Verifica si la fecha de hoy está en la Columna A o en la Columna D
+        const esFechaDeHoy = coincideConFechaHoy(colA) || coincideConFechaHoy(colD);
+        // Verifica que esa fila no haya sido enviada ya (que no tenga el tilde ✅)
+        const yaFueEnviado = colD.includes("✅");
+
+        if (fila.length >= 2 && esFechaDeHoy && !yaFueEnviado) {
           document.getElementById("texto-hoy").value = textoColumnaB;
           if (imagenColumnaC) {
             cargarImagenDesdeUrl(imagenColumnaC);
@@ -297,10 +320,10 @@
 
       if (!mensajeEncontrado) {
         document.getElementById("texto-hoy").value = "";
-        document.getElementById("texto-hoy").placeholder = "⚠️ Ya no quedan mensajes pendientes en la planilla para hoy (" + diaActual + "). Podés escribir uno directamente acá.";
+        document.getElementById("texto-hoy").placeholder = `⚠️ No hay mensajes pendientes en la planilla para la fecha de hoy (${fechaHoyStr}). Podés escribir uno directamente acá.`;
       }
 
-      if (mostrarAlerta) alert("¡Planilla conectada y mensaje cargado!");
+      if (mostrarAlerta) alert("¡Planilla conectada y sincronizada por fecha!");
     } catch (e) {
       if (mostrarAlerta) alert("No se pudo leer la planilla. Verificá que esté compartida como 'Cualquier persona con el enlace puede ver'.");
     }
@@ -341,15 +364,13 @@
       return;
     }
 
-    // Suma +1 al contador de este número en el día de hoy
     const clave = obtenerClaveContador(numero);
     const cantidadActual = parseInt(localStorage.getItem(clave) || "0", 10);
     localStorage.setItem(clave, cantidadActual + 1);
     actualizarEstadoVisual();
 
-    // Marca la fila como enviada en Google Sheets y, unos segundos después, recarga por si hay un turno de noche
     if (APPS_SCRIPT_URL && !APPS_SCRIPT_URL.includes("PEGA_ACA")) {
-      fetch(`${APPS_SCRIPT_URL}?dia=${diaActual}&fecha=${fechaHoy}`, { mode: "no-cors" })
+      fetch(`${APPS_SCRIPT_URL}?fecha=${encodeURIComponent(fechaHoyStr)}`, { mode: "no-cors" })
         .then(() => setTimeout(() => cargarDesdePlanilla(false), 2500))
         .catch(() => {});
     }
