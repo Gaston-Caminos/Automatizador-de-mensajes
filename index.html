@@ -1,0 +1,330 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Automatizador de mensajes</title>
+  <style>
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      background: #eef2f6;
+      margin: 0;
+      padding: 18px;
+      color: #1e293b;
+    }
+    .card {
+      max-width: 560px;
+      margin: 0 auto;
+      background: #ffffff;
+      border-radius: 20px;
+      padding: 24px;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.08);
+    }
+    h1 {
+      margin: 0 0 8px 0;
+      font-size: 28px;
+    }
+    .estado {
+      font-size: 18px;
+      font-weight: bold;
+      margin-bottom: 16px;
+      padding: 8px 14px;
+      border-radius: 10px;
+      display: inline-block;
+    }
+    .pendiente { background: #fef3c7; color: #b45309; }
+    .enviado { background: #d1fae5; color: #065f46; }
+    label {
+      font-size: 19px;
+      font-weight: 600;
+      display: block;
+      margin-bottom: 8px;
+    }
+    textarea {
+      width: 100%;
+      height: 135px;
+      font-size: 21px;
+      padding: 14px;
+      border-radius: 14px;
+      border: 2px solid #cbd5e1;
+      box-sizing: border-box;
+      font-family: inherit;
+      line-height: 1.4;
+    }
+    .preview-box {
+      margin-top: 14px;
+      text-align: center;
+      background: #f8fafc;
+      padding: 12px;
+      border-radius: 14px;
+      border: 1px solid #e2e8f0;
+    }
+    .preview-box img {
+      max-width: 100%;
+      max-height: 220px;
+      border-radius: 10px;
+    }
+    .btn-foto {
+      width: 100%;
+      background: #e0f2fe;
+      color: #0369a1;
+      border: 2px solid #bae6fd;
+      padding: 14px;
+      font-size: 19px;
+      font-weight: bold;
+      border-radius: 14px;
+      margin-top: 12px;
+      cursor: pointer;
+    }
+    .btn-enviar {
+      width: 100%;
+      background: #16a34a;
+      color: white;
+      border: none;
+      padding: 22px;
+      font-size: 23px;
+      font-weight: bold;
+      border-radius: 16px;
+      margin-top: 18px;
+      cursor: pointer;
+      box-shadow: 0 4px 12px rgba(22, 163, 74, 0.3);
+    }
+    details {
+      margin-top: 26px;
+      padding-top: 14px;
+      border-top: 2px dashed #cbd5e1;
+      font-size: 16px;
+    }
+    summary {
+      font-weight: bold;
+      cursor: pointer;
+      color: #475569;
+      padding: 6px 0;
+    }
+    input[type="text"] {
+      width: 100%;
+      font-size: 17px;
+      padding: 10px;
+      border-radius: 8px;
+      border: 1px solid #cbd5e1;
+      box-sizing: border-box;
+      margin-bottom: 12px;
+    }
+    .btn-guardar {
+      width: 100%;
+      background: #334155;
+      color: white;
+      border: none;
+      padding: 12px;
+      font-size: 16px;
+      font-weight: bold;
+      border-radius: 10px;
+      cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+
+<div class="card">
+  <h1 id="titulo-dia">☀️ Mensaje de Hoy</h1>
+  <div id="badge-estado" class="estado pendiente">⏳ Pendiente de enviar hoy</div>
+
+  <label for="texto-hoy">Mensaje a enviar (podés retocarlo acá si querés):</label>
+  <textarea id="texto-hoy" placeholder="Cargando el mensaje de hoy..."></textarea>
+
+  <div id="contenedor-imagen" class="preview-box" style="display:none;">
+    <label id="lbl-foto">📷 Foto lista para enviar hoy:</label>
+    <img id="img-preview" src="" alt="Vista previa">
+    <br>
+    <button onclick="quitarFoto()" style="margin-top:8px; padding:6px 12px; border-radius:6px; border:1px solid #cbd5e1; background:white;">❌ Quitar foto</button>
+  </div>
+
+  <input type="file" id="input-foto-dia" accept="image/*" style="display:none" onchange="seleccionarFotoGaleria(event)">
+  <button class="btn-foto" onclick="document.getElementById('input-foto-dia').click()">
+    📷 Elegir o cambiar foto de la galería
+  </button>
+
+  <button class="btn-enviar" onclick="enviarMensaje()">
+    💬 ABRIR WHATSAPP Y ENVIAR
+  </button>
+
+  <details>
+    <summary>⚙️ Configuración (Teléfono y Planilla Excel/Google)</summary>
+    <div style="margin-top:12px;">
+      <label style="font-size:16px;">📞 Teléfono a enviar (con 549...):</label>
+      <input type="text" id="telefono" value="5491156378127" placeholder="Ej: 5491156378127">
+
+      <label style="font-size:16px;">📊 Link de la Planilla de Google Sheets:</label>
+      <input type="text" id="sheet-url" placeholder="Pegá acá el enlace de la planilla compartida">
+
+      <button class="btn-guardar" onclick="guardarConfiguracion()">💾 Guardar y sincronizar planilla</button>
+    </div>
+  </details>
+</div>
+
+<script>
+  const DIAS = ["domingo", "lunes", "martes", "miercoles", "jueves", "viernes", "sabado"];
+  const diaActual = DIAS[new Date().getDay()];
+  const fechaHoy = new Date().toISOString().split("T")[0];
+  let archivoImagenHoy = null;
+
+  function normalizar(str) {
+    return (str || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
+  }
+
+  window.onload = () => {
+    document.getElementById("titulo-dia").innerText = "☀️ Mensaje del " + diaActual.charAt(0).toUpperCase() + diaActual.slice(1);
+    document.getElementById("telefono").value = localStorage.getItem("telefono_hermano") || "5491156378127";
+    document.getElementById("sheet-url").value = localStorage.getItem("sheet_url") || "";
+
+    actualizarEstadoVisual();
+    cargarDesdePlanilla();
+  };
+
+  function actualizarEstadoVisual() {
+    if (localStorage.getItem("ultimo_envio") === fechaHoy) {
+      const badge = document.getElementById("badge-estado");
+      badge.className = "estado enviado";
+      badge.innerText = "✅ Ya se lo mandaste hoy";
+    }
+  }
+
+  function guardarConfiguracion() {
+    localStorage.setItem("telefono_hermano", document.getElementById("telefono").value.trim());
+    localStorage.setItem("sheet_url", document.getElementById("sheet-url").value.trim());
+    cargarDesdePlanilla(true);
+  }
+
+  // Convierte cualquier link normal de Google Sheets en un enlace de lectura automática CSV
+  function obtenerUrlCsv(urlOriginal) {
+    if (!urlOriginal) return "";
+    const match = urlOriginal.match(/\/d\/([a-zA-Z0-9-_]+)/);
+    if (match && match[1]) {
+      return `https://docs.google.com/spreadsheets/d/${match[1]}/export?format=csv`;
+    }
+    return urlOriginal;
+  }
+
+  // Lector de celdas CSV que respeta comas y saltos de línea adentro de las celdas
+  function parsearCSV(texto) {
+    const filas = [];
+    let filaActual = [];
+    let celda = "";
+    let entreComillas = false;
+
+    for (let i = 0; i < texto.length; i++) {
+      const char = texto[i];
+      const sig = texto[i + 1];
+      if (char === '"' && entreComillas && sig === '"') {
+        celda += '"';
+        i++;
+      } else if (char === '"') {
+        entreComillas = !entreComillas;
+      } else if (char === ',' && !entreComillas) {
+        filaActual.push(celda);
+        celda = "";
+      } else if ((char === '\n' || char === '\r') && !entreComillas) {
+        if (char === '\r' && sig === '\n') i++;
+        filaActual.push(celda);
+        filas.push(filaActual);
+        filaActual = [];
+        celda = "";
+      } else {
+        celda += char;
+      }
+    }
+    if (celda || filaActual.length > 0) {
+      filaActual.push(celda);
+      filas.push(filaActual);
+    }
+    return filas;
+  }
+
+  async function cargarDesdePlanilla(mostrarAlerta = false) {
+    const rawUrl = localStorage.getItem("sheet_url");
+    if (!rawUrl) {
+      document.getElementById("texto-hoy").placeholder = "Escribí acá el mensaje para hoy o configurá la planilla abajo...";
+      return;
+    }
+
+    try {
+      const csvUrl = obtenerUrlCsv(rawUrl);
+      const respuesta = await fetch(csvUrl);
+      const textoCsv = await respuesta.text();
+      const filas = parsearCSV(textoCsv);
+
+      for (const fila of filas) {
+        if (fila.length >= 2 && normalizar(fila[0]) === diaActual) {
+          document.getElementById("texto-hoy").value = fila[1].trim();
+          const urlImagen = (fila[2] || "").trim();
+          if (urlImagen) {
+            cargarImagenDesdeUrl(urlImagen);
+          }
+          break;
+        }
+      }
+      if (mostrarAlerta) alert("¡Planilla conectada y mensaje de hoy cargado!");
+    } catch (e) {
+      if (mostrarAlerta) alert("No se pudo leer la planilla. Verificá que esté compartida como 'Cualquier persona con el enlace puede ver'.");
+    }
+  }
+
+  async function cargarImagenDesdeUrl(url) {
+    try {
+      document.getElementById("img-preview").src = url;
+      document.getElementById("contenedor-imagen").style.display = "block";
+      const resp = await fetch(url);
+      const blob = await resp.blob();
+      archivoImagenHoy = new File([blob], "foto_del_dia.jpg", { type: blob.type || "image/jpeg" });
+    } catch (e) {
+      console.log("La imagen se muestra pero requiere seleccionarse local si el servidor externo bloquea CORS.");
+    }
+  }
+
+  function seleccionarFotoGaleria(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+    archivoImagenHoy = file;
+    document.getElementById("img-preview").src = URL.createObjectURL(file);
+    document.getElementById("contenedor-imagen").style.display = "block";
+  }
+
+  function quitarFoto() {
+    archivoImagenHoy = null;
+    document.getElementById("contenedor-imagen").style.display = "none";
+    document.getElementById("input-foto-dia").value = "";
+  }
+
+  async function enviarMensaje() {
+    const texto = document.getElementById("texto-hoy").value.trim();
+    const numero = (document.getElementById("telefono").value || "").replace(/\D/g, "");
+
+    if (!texto && !archivoImagenHoy) {
+      alert("Escribí un mensaje o elegí una foto antes de enviar.");
+      return;
+    }
+
+    localStorage.setItem("ultimo_envio", fechaHoy);
+    actualizarEstadoVisual();
+
+    if (texto && navigator.clipboard) {
+      try { await navigator.clipboard.writeText(texto); } catch (e) {}
+    }
+
+    if (archivoImagenHoy && navigator.canShare && navigator.canShare({ files: [archivoImagenHoy] })) {
+      try {
+        await navigator.share({
+          files: [archivoImagenHoy],
+          text: texto
+        });
+        return;
+      } catch (err) {}
+    }
+
+    const url = `https://wa.me/${numero}?text=${encodeURIComponent(texto)}`;
+    window.location.href = url;
+  }
+</script>
+
+</body>
+</html>
