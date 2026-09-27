@@ -127,7 +127,7 @@
 
 <div class="card">
   <h1 id="titulo-dia">☀️ Mensaje de Hoy</h1>
-  <div id="badge-estado" class="estado pendiente">⏳ Pendiente de enviar hoy</div>
+  <div id="badge-estado" class="estado pendiente">⏳ Hoy todavía no enviaste mensajes a este número</div>
 
   <label for="texto-hoy">Mensaje a enviar (podés retocarlo acá si querés):</label>
   <textarea id="texto-hoy" placeholder="Cargando el mensaje de hoy..."></textarea>
@@ -152,7 +152,7 @@
     <summary>⚙️ Configuración (Teléfono y Planilla Excel/Google)</summary>
     <div style="margin-top:12px;">
       <label style="font-size:16px;">📞 Teléfono a enviar (con 549...):</label>
-      <input type="text" id="telefono" value="5491156378127" placeholder="Ej: 5491156378127">
+      <input type="text" id="telefono" value="5491156378127" placeholder="Ej: 5491156378127" oninput="actualizarEstadoVisual()">
 
       <label style="font-size:16px;">📊 Link de la Planilla de Google Sheets:</label>
       <input type="text" id="sheet-url" placeholder="Pegá acá el enlace de la planilla compartida">
@@ -163,6 +163,14 @@
 </div>
 
 <script>
+  // =========================================================================
+  // DATOS FIJOS PREDETERMINADOS
+  // =========================================================================
+  const TELEFONO_FIJO = "5491156378127";
+  const PLANILLA_FIJA = "https://docs.google.com/spreadsheets/d/1oXpRzPNlI0kY9bhV5HNKCFqk-tmBIp4YRWlCyt-gwD4/edit?usp=drive_link";
+  const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzzMvppseiPWtKM1RJ6iRADN6R4GUEySrufwsDZrksvL0qfw1frJXxCWGgWjqSdvMVK/exec";
+  // =========================================================================
+
   const DIAS = ["domingo", "lunes", "martes", "miercoles", "jueves", "viernes", "sabado"];
   const diaActual = DIAS[new Date().getDay()];
   const fechaHoy = new Date().toISOString().split("T")[0];
@@ -174,30 +182,43 @@
 
   window.onload = () => {
     document.getElementById("titulo-dia").innerText = "☀️ Mensaje del " + diaActual.charAt(0).toUpperCase() + diaActual.slice(1);
-    document.getElementById("telefono").value = localStorage.getItem("telefono_hermano") || "5491156378127";
-    document.getElementById("sheet-url").value = localStorage.getItem("sheet_url") || "";
+    document.getElementById("telefono").value = localStorage.getItem("telefono_hermano") || TELEFONO_FIJO;
+    document.getElementById("sheet-url").value = localStorage.getItem("sheet_url") || PLANILLA_FIJA;
 
     actualizarEstadoVisual();
     cargarDesdePlanilla();
   };
 
+  function obtenerClaveContador(numero) {
+    const numLimpio = (numero || "").replace(/\D/g, "");
+    return `envios_${fechaHoy}_${numLimpio}`;
+  }
+
   function actualizarEstadoVisual() {
-    if (localStorage.getItem("ultimo_envio") === fechaHoy) {
-      const badge = document.getElementById("badge-estado");
+    const numero = document.getElementById("telefono").value;
+    const clave = obtenerClaveContador(numero);
+    const cantidadHoy = parseInt(localStorage.getItem(clave) || "0", 10);
+    const badge = document.getElementById("badge-estado");
+
+    if (cantidadHoy > 0) {
       badge.className = "estado enviado";
-      badge.innerText = "✅ Ya se lo mandaste hoy";
+      const palabra = cantidadHoy === 1 ? "mensaje" : "mensajes";
+      badge.innerText = `✅ Enviados a este número hoy: ${cantidadHoy} ${palabra}`;
+    } else {
+      badge.className = "estado pendiente";
+      badge.innerText = "⏳ Hoy todavía no enviaste mensajes a este número";
     }
   }
 
   function guardarConfiguracion() {
     localStorage.setItem("telefono_hermano", document.getElementById("telefono").value.trim());
     localStorage.setItem("sheet_url", document.getElementById("sheet-url").value.trim());
+    actualizarEstadoVisual();
     cargarDesdePlanilla(true);
   }
 
-  // Convierte cualquier link normal de Google Sheets en un enlace de lectura automática CSV
   function obtenerUrlCsv(urlOriginal) {
-    if (!urlOriginal) return "";
+    if (!urlOriginal || urlOriginal.includes("PEGA_ACA")) return "";
     const match = urlOriginal.match(/\/d\/([a-zA-Z0-9-_]+)/);
     if (match && match[1]) {
       return `https://docs.google.com/spreadsheets/d/${match[1]}/export?format=csv`;
@@ -205,7 +226,6 @@
     return urlOriginal;
   }
 
-  // Lector de celdas CSV que respeta comas y saltos de línea adentro de las celdas
   function parsearCSV(texto) {
     const filas = [];
     let filaActual = [];
@@ -241,29 +261,46 @@
   }
 
   async function cargarDesdePlanilla(mostrarAlerta = false) {
-    const rawUrl = localStorage.getItem("sheet_url");
-    if (!rawUrl) {
+    const rawUrl = document.getElementById("sheet-url").value.trim();
+    const csvUrl = obtenerUrlCsv(rawUrl);
+
+    if (!csvUrl) {
       document.getElementById("texto-hoy").placeholder = "Escribí acá el mensaje para hoy o configurá la planilla abajo...";
       return;
     }
 
     try {
-      const csvUrl = obtenerUrlCsv(rawUrl);
-      const respuesta = await fetch(csvUrl);
+      const respuesta = await fetch(csvUrl + "&t=" + Date.now());
       const textoCsv = await respuesta.text();
       const filas = parsearCSV(textoCsv);
 
+      let mensajeEncontrado = false;
+
       for (const fila of filas) {
-        if (fila.length >= 2 && normalizar(fila[0]) === diaActual) {
-          document.getElementById("texto-hoy").value = fila[1].trim();
-          const urlImagen = (fila[2] || "").trim();
-          if (urlImagen) {
-            cargarImagenDesdeUrl(urlImagen);
+        const diaColumnaA = normalizar(fila[0]);
+        const textoColumnaB = (fila[1] || "").trim();
+        const imagenColumnaC = (fila[2] || "").trim();
+        const estadoColumnaD = (fila[3] || "").trim();
+
+        // Levanta la primera fila del día de hoy que todavía tenga la Columna D vacía
+        if (fila.length >= 2 && diaColumnaA !== "" && diaColumnaA.includes(diaActual) && estadoColumnaD === "") {
+          document.getElementById("texto-hoy").value = textoColumnaB;
+          if (imagenColumnaC) {
+            cargarImagenDesdeUrl(imagenColumnaC);
+          } else {
+            quitarFoto();
           }
+          mensajeEncontrado = true;
           break;
         }
       }
-      if (mostrarAlerta) alert("¡Planilla conectada y mensaje de hoy cargado!");
+
+      if (!mensajeEncontrado) {
+        document.getElementById("texto-hoy").value = "";
+        document.getElementById("texto-hoy").placeholder = "⚠️ Ya no quedan mensajes pendientes en la planilla para hoy (" + diaActual + "). Podés escribir uno directamente acá.";
+      }
+
+      if (mostrarAlerta) alert("¡Planilla conectada y mensaje cargado!");
     } catch (e) {
       if (mostrarAlerta) alert("No se pudo leer la planilla. Verificá que esté compartida como 'Cualquier persona con el enlace puede ver'.");
     }
@@ -304,8 +341,18 @@
       return;
     }
 
-    localStorage.setItem("ultimo_envio", fechaHoy);
+    // Suma +1 al contador de este número en el día de hoy
+    const clave = obtenerClaveContador(numero);
+    const cantidadActual = parseInt(localStorage.getItem(clave) || "0", 10);
+    localStorage.setItem(clave, cantidadActual + 1);
     actualizarEstadoVisual();
+
+    // Marca la fila como enviada en Google Sheets y, unos segundos después, recarga por si hay un turno de noche
+    if (APPS_SCRIPT_URL && !APPS_SCRIPT_URL.includes("PEGA_ACA")) {
+      fetch(`${APPS_SCRIPT_URL}?dia=${diaActual}&fecha=${fechaHoy}`, { mode: "no-cors" })
+        .then(() => setTimeout(() => cargarDesdePlanilla(false), 2500))
+        .catch(() => {});
+    }
 
     if (texto && navigator.clipboard) {
       try { await navigator.clipboard.writeText(texto); } catch (e) {}
