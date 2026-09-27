@@ -184,8 +184,13 @@
 
   window.onload = () => {
     document.getElementById("titulo-dia").innerText = `☀️ ${nombreDiaHoy} (${fechaHoyStr})`;
-    document.getElementById("telefono").value = localStorage.getItem("telefono_hermano") || TELEFONO_FIJO;
-    document.getElementById("sheet-url").value = localStorage.getItem("sheet_url") || PLANILLA_FIJA;
+    
+    // Si ya pusiste los datos fijos en el código, les da prioridad para que un localStorage viejo no los pise
+    const telGuardado = localStorage.getItem("telefono_hermano");
+    const urlGuardada = localStorage.getItem("sheet_url");
+
+    document.getElementById("telefono").value = (TELEFONO_FIJO && !TELEFONO_FIJO.includes("PEGA_ACA")) ? TELEFONO_FIJO : (telGuardado || "");
+    document.getElementById("sheet-url").value = (PLANILLA_FIJA && !PLANILLA_FIJA.includes("PEGA_ACA")) ? PLANILLA_FIJA : (urlGuardada || "");
 
     actualizarEstadoVisual();
     cargarDesdePlanilla();
@@ -240,7 +245,7 @@
     if (!urlOriginal || urlOriginal.includes("PEGA_ACA")) return "";
     const match = urlOriginal.match(/\/d\/([a-zA-Z0-9-_]+)/);
     if (match && match[1]) {
-      return `https://docs.google.com/spreadsheets/d/${match[1]}/export?format=csv`;
+      return `https://docs.google.com/spreadsheets/d/${match[1]}/gviz/tq?tqx=out:csv`;
     }
     return urlOriginal;
   }
@@ -325,6 +330,7 @@
 
       if (mostrarAlerta) alert("¡Planilla conectada y sincronizada por fecha!");
     } catch (e) {
+      document.getElementById("texto-hoy").placeholder = "❌ Error al conectar con la planilla. Revisá el link o que esté compartida como 'Cualquier persona con el enlace'.";
       if (mostrarAlerta) alert("No se pudo leer la planilla. Verificá que esté compartida como 'Cualquier persona con el enlace puede ver'.");
     }
   }
