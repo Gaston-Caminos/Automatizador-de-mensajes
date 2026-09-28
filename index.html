@@ -34,7 +34,7 @@
     }
     .pendiente { background: #fef3c7; color: #b45309; }
     .enviado { background: #d1fae5; color: #065f46; }
-    label {
+    label, .titulo-seccion {
       font-size: 19px;
       font-weight: 600;
       display: block;
@@ -63,6 +63,14 @@
       max-width: 100%;
       max-height: 220px;
       border-radius: 10px;
+    }
+    .btn-quitar {
+      margin-top: 8px;
+      padding: 6px 12px;
+      border-radius: 6px;
+      border: 1px solid #cbd5e1;
+      background: white;
+      cursor: pointer;
     }
     .btn-foto {
       width: 100%;
@@ -133,31 +141,31 @@
   <textarea id="texto-hoy" placeholder="Cargando el mensaje de hoy..."></textarea>
 
   <div id="contenedor-imagen" class="preview-box" style="display:none;">
-    <label id="lbl-foto">📷 Foto lista para enviar hoy:</label>
+    <div id="lbl-foto" class="titulo-seccion">📷 Foto lista para enviar hoy:</div>
     <img id="img-preview" src="" alt="Vista previa">
     <br>
-    <button onclick="quitarFoto()" style="margin-top:8px; padding:6px 12px; border-radius:6px; border:1px solid #cbd5e1; background:white;">❌ Quitar foto</button>
+    <button type="button" id="btn-quitar-foto" class="btn-quitar">❌ Quitar foto</button>
   </div>
 
-  <input type="file" id="input-foto-dia" accept="image/*" style="display:none" onchange="seleccionarFotoGaleria(event)">
-  <button class="btn-foto" onclick="document.getElementById('input-foto-dia').click()">
+  <input type="file" id="input-foto-dia" accept="image/*" style="display:none">
+  <button type="button" id="btn-elegir-foto" class="btn-foto">
     📷 Elegir o cambiar foto de la galería
   </button>
 
-  <button class="btn-enviar" id="btn-enviar-wpp" onclick="enviarMensaje()">
+  <button type="button" id="btn-enviar-wpp" class="btn-enviar">
     💬 ABRIR WHATSAPP Y ENVIAR
   </button>
 
   <details>
     <summary>⚙️ Configuración (Teléfono y Planilla Excel/Google)</summary>
     <div style="margin-top:12px;">
-      <label style="font-size:16px;">📞 Teléfono a enviar (con 549...):</label>
-      <input type="text" id="telefono" value="5491156378127" placeholder="Ej: 5491156378127" oninput="actualizarEstadoVisual()">
+      <label for="telefono" style="font-size:16px;">📞 Teléfono a enviar (con 549...):</label>
+      <input type="text" id="telefono" value="5491156378127" placeholder="Ej: 5491156378127">
 
-      <label style="font-size:16px;">📊 Link de la Planilla de Google Sheets:</label>
+      <label for="sheet-url" style="font-size:16px;">📊 Link de la Planilla de Google Sheets:</label>
       <input type="text" id="sheet-url" value="https://docs.google.com/spreadsheets/d/1oXpRzPNlI0kY9bhV5HNKCFqk-tmBIp4YRWlCyt-gwD4/edit?usp=drive_link" placeholder="Pegá acá el enlace de la planilla compartida">
 
-      <button class="btn-guardar" onclick="guardarConfiguracion()">💾 Guardar y sincronizar planilla</button>
+      <button type="button" id="btn-guardar-config" class="btn-guardar">💾 Guardar y sincronizar planilla</button>
     </div>
   </details>
 </div>
@@ -168,7 +176,7 @@
   // =========================================================================
   const TELEFONO_FIJO = "5491156378127";
   const PLANILLA_FIJA = "https://docs.google.com/spreadsheets/d/1oXpRzPNlI0kY9bhV5HNKCFqk-tmBIp4YRWlCyt-gwD4/edit?usp=drive_link";
-  const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzn3EDhBABRg4R6HUhXgssbL5Co9nd_Xvy9WLB6saoa8f2LfTBcCE1jBo8biIJ6EKGH/exec";
+  const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzzMvppseiPWtKM1RJ6iRADN6R4GUEySrufwsDZrksvL0qfw1frJXxCWGgWjqSdvMVK/exec";
   // =========================================================================
 
   const DIAS = ["Domingo", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado"];
@@ -177,30 +185,36 @@
   const mesHoy = ahora.getMonth() + 1;
   const anioHoy = ahora.getFullYear();
   const nombreDiaHoy = DIAS[ahora.getDay()];
-
-  // Fecha local en formato DD/MM/YYYY
   const fechaHoyStr = `${String(diaHoy).padStart(2, "0")}/${String(mesHoy).padStart(2, "0")}/${anioHoy}`;
   let archivoImagenHoy = null;
 
-  window.onload = () => {
+  window.addEventListener("DOMContentLoaded", () => {
     document.getElementById("titulo-dia").innerText = `☀️ ${nombreDiaHoy} (${fechaHoyStr})`;
-    
+
     const telGuardado = localStorage.getItem("telefono_hermano");
     const urlGuardada = localStorage.getItem("sheet_url");
 
     document.getElementById("telefono").value = TELEFONO_FIJO || telGuardado || "";
     document.getElementById("sheet-url").value = PLANILLA_FIJA || urlGuardada || "";
 
+    // Eventos conectados sin usar atributos inline en el HTML
+    document.getElementById("btn-elegir-foto").addEventListener("click", () => {
+      document.getElementById("input-foto-dia").click();
+    });
+    document.getElementById("input-foto-dia").addEventListener("change", seleccionarFotoGaleria);
+    document.getElementById("btn-quitar-foto").addEventListener("click", quitarFoto);
+    document.getElementById("btn-enviar-wpp").addEventListener("click", enviarMensaje);
+    document.getElementById("telefono").addEventListener("input", actualizarEstadoVisual);
+    document.getElementById("btn-guardar-config").addEventListener("click", guardarConfiguracion);
+
     actualizarEstadoVisual();
     cargarDesdePlanilla();
-  };
+  });
 
-  // Reconoce DD/MM/YYYY, DD/MM/YY, DD/MM y también YYYY-MM-DD
   function coincideConFechaHoy(textoCelda) {
     if (!textoCelda) return false;
     const str = String(textoCelda).trim();
 
-    // Si viene en formato ISO (YYYY-MM-DD)
     const matchISO = str.match(/^(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})/);
     if (matchISO) {
       const a = parseInt(matchISO[1], 10);
@@ -209,7 +223,6 @@
       return d === diaHoy && m === mesHoy && a === anioHoy;
     }
 
-    // Formato tradicional en español: DD/MM/YYYY, DD-MM-YYYY o DD/MM
     const matchDMY = str.match(/(\d{1,2})[\/\-](\d{1,2})(?:[\/\-](\d{2,4}))?/);
     if (matchDMY) {
       const d = parseInt(matchDMY[1], 10);
@@ -327,6 +340,7 @@
 
         if (fila.length >= 2 && esFechaDeHoy && !yaFueEnviado) {
           document.getElementById("texto-hoy").value = textoColumnaB;
+          document.getElementById("texto-hoy").placeholder = "Escribí acá el mensaje para hoy...";
           if (imagenColumnaC) {
             cargarImagenDesdeUrl(imagenColumnaC);
           } else {
@@ -389,7 +403,6 @@
     localStorage.setItem(clave, cantidadActual + 1);
     actualizarEstadoVisual();
 
-    // Dispara el aviso a Google Sheets y espera un instante para asegurar que llegue antes de abrir WhatsApp
     if (APPS_SCRIPT_URL && APPS_SCRIPT_URL.includes("/exec")) {
       const peticion = fetch(`${APPS_SCRIPT_URL}?fecha=${encodeURIComponent(fechaHoyStr)}&t=${Date.now()}`, { 
         mode: "no-cors",
