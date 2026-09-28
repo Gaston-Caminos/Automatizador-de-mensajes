@@ -138,7 +138,7 @@
   <div id="badge-estado" class="estado pendiente">⏳ Hoy todavía no enviaste mensajes a este número</div>
 
   <label for="texto-hoy">Mensaje a enviar (podés retocarlo acá si querés):</label>
-  <textarea id="texto-hoy" placeholder="Cargando el mensaje de hoy..."></textarea>
+  <textarea id="texto-hoy" placeholder="Conectando con la planilla..."></textarea>
 
   <div id="contenedor-imagen" class="preview-box" style="display:none;">
     <div id="lbl-foto" class="titulo-seccion">📷 Foto lista para enviar hoy:</div>
@@ -197,7 +197,6 @@
     document.getElementById("telefono").value = TELEFONO_FIJO || telGuardado || "";
     document.getElementById("sheet-url").value = PLANILLA_FIJA || urlGuardada || "";
 
-    // Eventos conectados sin usar atributos inline en el HTML
     document.getElementById("btn-elegir-foto").addEventListener("click", () => {
       document.getElementById("input-foto-dia").click();
     });
@@ -208,13 +207,23 @@
     document.getElementById("btn-guardar-config").addEventListener("click", guardarConfiguracion);
 
     actualizarEstadoVisual();
-    cargarDesdePlanilla();
+    cargarDesdePlanilla(false);
   });
 
   function coincideConFechaHoy(textoCelda) {
     if (!textoCelda) return false;
     const str = String(textoCelda).trim();
 
+    // Si Google devuelve formato Date(YYYY, M, D)
+    const matchGoogleDate = str.match(/Date\((\d{4}),\s*(\d{1,2}),\s*(\d{1,2})\)/);
+    if (matchGoogleDate) {
+      const a = parseInt(matchGoogleDate[1], 10);
+      const m = parseInt(matchGoogleDate[2], 10) + 1;
+      const d = parseInt(matchGoogleDate[3], 10);
+      return d === diaHoy && m === mesHoy && a === anioHoy;
+    }
+
+    // Si viene en formato ISO (YYYY-MM-DD)
     const matchISO = str.match(/^(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})/);
     if (matchISO) {
       const a = parseInt(matchISO[1], 10);
@@ -223,6 +232,7 @@
       return d === diaHoy && m === mesHoy && a === anioHoy;
     }
 
+    // Formato tradicional DD/MM/YYYY o DD/MM
     const matchDMY = str.match(/(\d{1,2})[\/\-](\d{1,2})(?:[\/\-](\d{2,4}))?/);
     if (matchDMY) {
       const d = parseInt(matchDMY[1], 10);
@@ -268,18 +278,6 @@
     return (match && match[1]) ? match[1] : "";
   }
 
-  async function descargarCsvPlanilla(sheetId) {
-    const urlGviz = `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:csv&t=${Date.now()}`;
-    const urlExport = `https://docs.google.com/spreadsheets/d/${sheetId}/export?format=csv&t=${Date.now()}`;
-    try {
-      const r1 = await fetch(urlGviz);
-      if (r1.ok) return await r1.text();
-    } catch (e) {}
-    const r2 = await fetch(urlExport);
-    if (!r2.ok) throw new Error("No se pudo conectar con Google Sheets");
-    return await r2.text();
-  }
-
   function parsearCSV(texto) {
     const filas = [];
     let filaActual = [];
@@ -314,6 +312,70 @@
     return filas;
   }
 
+  function procesarFilasPlanilla(filas, mostrarAlerta) {
+    let mensajeEncontrado = false;
+
+    for (const fila of filas) {
+      const colA = String(fila[0] || "").trim();
+      const textoColumnaB = String(fila[1] || "").trim();
+      const imagenColumnaC = String(fila[2] || "").trim();
+      const colD = String(fila[3] || "").trim();
+
+      const esFechaDeHoy = coincideConFechaHoy(colA) || coincideConFechaHoy(colD);
+      const yaFueEnviado = colD.includes("✅");
+
+      if (fila.length >= 2 && esFechaDeHoy && !yaFueEnviado) {
+        document.getElementById("texto-hoy").value = textoColumnaB;
+        document.getElementById("texto-hoy").placeholder = "Escribí acá el mensaje para hoy...";
+        if (imagenColumnaC) {
+          cargarImagenDesdeUrl(imagenColumnaC);
+        } else {
+          quitarFoto();
+        }
+        mensajeEncontrado = true;
+        break;
+      }
+    }
+
+    if (!mensajeEncontrado) {
+      document.getElementById("texto-hoy").value = "";
+      document.getElementById("texto-hoy").placeholder = `⚠️ Leí la planilla correctamente, pero no hay ninguna fila pendiente con la fecha de hoy (${fechaHoyStr}).`;
+    }
+
+    if (mostrarAlerta) alert("¡Planilla conectada y sincronizada!");
+  }
+
+  // Motor de respaldo JSONP: salta cualquier bloqueo CORS de GitHub Pages
+  function cargarPorJSONP(sheetId, mostrarAlerta) {
+    window.recibirDatosPlanilla = function(respuesta) {
+      try {
+        const filas = (respuesta.table.rows || []).map(r => {
+          return (r.c || []).map(celda => {
+            if (!celda) return "";
+            if (celda.f !== undefined && celda.f !== null) return String(celda.f);
+            if (celda.v !== undefined && celda.v !== null) return String(celda.v);
+            return "";
+          });
+        });
+        procesarFilasPlanilla(filas, mostrarAlerta);
+      } catch (e) {
+        document.getElementById("texto-hoy").placeholder = "❌ Error al leer las celdas de la planilla.";
+      }
+    };
+
+    const viejo = document.getElementById("jsonp-sheets");
+    if (viejo) viejo.remove();
+
+    const script = document.createElement("script");
+    script.id = "jsonp-sheets";
+    script.src = `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=responseHandler:recibirDatosPlanilla&t=${Date.now()}`;
+    script.onerror = () => {
+      document.getElementById("texto-hoy").placeholder = "❌ Google bloqueó el acceso externo. En tu planilla andá a: Archivo -> Compartir -> Publicar en la web -> Publicar.";
+      if (mostrarAlerta) alert("Falta habilitar 'Publicar en la web' en el menú Archivo de Google Sheets.");
+    };
+    document.body.appendChild(script);
+  }
+
   async function cargarDesdePlanilla(mostrarAlerta = false) {
     const rawUrl = document.getElementById("sheet-url").value.trim();
     const sheetId = extraerIdPlanilla(rawUrl);
@@ -323,44 +385,8 @@
       return;
     }
 
-    try {
-      const textoCsv = await descargarCsvPlanilla(sheetId);
-      const filas = parsearCSV(textoCsv);
-
-      let mensajeEncontrado = false;
-
-      for (const fila of filas) {
-        const colA = (fila[0] || "").trim();
-        const textoColumnaB = (fila[1] || "").trim();
-        const imagenColumnaC = (fila[2] || "").trim();
-        const colD = (fila[3] || "").trim();
-
-        const esFechaDeHoy = coincideConFechaHoy(colA) || coincideConFechaHoy(colD);
-        const yaFueEnviado = colD.includes("✅");
-
-        if (fila.length >= 2 && esFechaDeHoy && !yaFueEnviado) {
-          document.getElementById("texto-hoy").value = textoColumnaB;
-          document.getElementById("texto-hoy").placeholder = "Escribí acá el mensaje para hoy...";
-          if (imagenColumnaC) {
-            cargarImagenDesdeUrl(imagenColumnaC);
-          } else {
-            quitarFoto();
-          }
-          mensajeEncontrado = true;
-          break;
-        }
-      }
-
-      if (!mensajeEncontrado) {
-        document.getElementById("texto-hoy").value = "";
-        document.getElementById("texto-hoy").placeholder = `⚠️ No hay mensajes pendientes en la planilla para la fecha de hoy (${fechaHoyStr}). Podés escribir uno directamente acá.`;
-      }
-
-      if (mostrarAlerta) alert("¡Planilla conectada y sincronizada por fecha!");
-    } catch (e) {
-      document.getElementById("texto-hoy").placeholder = "❌ Error al conectar con la planilla. Revisá que esté compartida como 'Cualquier persona con el enlace'.";
-      if (mostrarAlerta) alert("No se pudo leer la planilla. Verificá que esté compartida como 'Cualquier persona con el enlace puede ver'.");
-    }
+    // Intenta primero con JSONP (inmune a bloqueos de páginas estáticas como GitHub Pages)
+    cargarPorJSONP(sheetId, mostrarAlerta);
   }
 
   async function cargarImagenDesdeUrl(url) {
